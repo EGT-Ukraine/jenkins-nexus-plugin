@@ -28,6 +28,7 @@ public class JenkinsNexusPlugin extends BuildWrapper {
     private String nexusUser;
     private Secret nexusPassword;
     private String nexusSpace;
+    private String skipImageRegExp;
 
     private static final String TAG_SUFFIX = "_tag";
     private static final String ENV_NAME = "PROJECT_DATA";
@@ -43,11 +44,12 @@ public class JenkinsNexusPlugin extends BuildWrapper {
 
 
     @DataBoundConstructor
-    public JenkinsNexusPlugin(String nexusUrl, String nexusUser, Secret nexusPassword, String nexusSpace) {
+    public JenkinsNexusPlugin(String nexusUrl, String nexusUser, Secret nexusPassword, String nexusSpace, String skipImageRegExp) {
         this.nexusUrl = nexusUrl;
         this.nexusUser = nexusUser;
         this.nexusPassword = nexusPassword;
         this.nexusSpace = nexusSpace;
+        this.skipImageRegExp = skipImageRegExp;
     }
 
     public String getNexusUrl() {
@@ -66,18 +68,42 @@ public class JenkinsNexusPlugin extends BuildWrapper {
         return nexusSpace;
     }
 
-    private static void updateImagesAndTagsFromNexus(String projectName, String url, String user, String password, String space) {
-        NexusClient nexusClient = new NexusClient(url, user, password);
-        projectNexusImages.put(projectName, nexusClient.getImageNamesBySpaceName(space));
+    public String getSkipImageRegExp() {
+        return skipImageRegExp;
+    }
 
-        if (projectNexusImages.size() == 0) {
+    private static List<String> filterImageNamesByRegExp(String skipImageRegExp, List<String> originalImages) {
+        if (skipImageRegExp == null || skipImageRegExp.isEmpty()) {
+            return originalImages;
+        }
+
+        List<String> imageNames = new ArrayList<>();
+        for (String imageName : originalImages) {
+            if (imageName.matches(skipImageRegExp)) {
+                continue;
+            }
+
+            imageNames.add(imageName);
+        }
+
+        return imageNames;
+    }
+
+    private static void updateImagesAndTagsFromNexus(String projectName, String url, String user, String password, String space, String skipImageRegExp) {
+        NexusClient nexusClient = new NexusClient(url, user, password);
+
+        List<String> imageNames = filterImageNamesByRegExp(skipImageRegExp, nexusClient.getImageNamesBySpaceName(space));
+        if (imageNames.size() == 0) {
             return;
         }
+
+        projectNexusImages.put(projectName, imageNames);
 
         Map<String, String> tags = new HashMap<>();
         for (String imageName : projectNexusImages.get(projectName)) {
             tags.put(String.format("%s%s", imageName, TAG_SUFFIX), String.join(TAGS_SEPARATOR, nexusClient.getImageTags(space, imageName)));
         }
+
         projectNexusTags.put(projectName, tags);
     }
 
@@ -172,7 +198,8 @@ public class JenkinsNexusPlugin extends BuildWrapper {
                         AbstractProject<?, ?> project = (AbstractProject<?, ?>) object;
                         try {
                             updateImagesAndTagsFromNexus(project.getName(), formData.getString("nexusUrl"),
-                                    formData.getString("nexusUser"), formData.getString("nexusPassword"), formData.getString("nexusSpace"));
+                                    formData.getString("nexusUser"), formData.getString("nexusPassword"),
+                                    formData.getString("nexusSpace"), formData.getString("skipImageRegExp"));
                             updateProjectProperties(project);
                         } catch (IOException e) {
                             e.printStackTrace();
@@ -207,7 +234,8 @@ public class JenkinsNexusPlugin extends BuildWrapper {
             projectUpdateTime.put(project.getName(), LocalTime.now());
             try {
                 plugin = readProjectConfig(project).getBuildWrappersList().get(JenkinsNexusPlugin.class);
-                updateImagesAndTagsFromNexus(project.getName(), plugin.getNexusUrl(), plugin.getNexusUser(), plugin.getNexusPassword().getPlainText(), plugin.getNexusSpace());
+                updateImagesAndTagsFromNexus(project.getName(), plugin.getNexusUrl(), plugin.getNexusUser(),
+                        plugin.getNexusPassword().getPlainText(), plugin.getNexusSpace(), plugin.getSkipImageRegExp());
             } catch (IOException | NullPointerException e) {
                 LOGGER.warning(e.getMessage());
                 return project.getActions();
