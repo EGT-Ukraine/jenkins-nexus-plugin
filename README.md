@@ -1,4 +1,4 @@
-jenkins-nexus-plugin
+jenkins-nexus-plugin [![Build Status](https://travis-ci.org/EGT-Ukraine/jenkins-nexus-plugin.svg?branch=master)](https://travis-ci.org/EGT-Ukraine/jenkins-nexus-plugin)
 ---
 
 You could add whole space to deployment from Nexus' Docker Registry using image tags 
