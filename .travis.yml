@@ -1,4 +1,13 @@
 language: java
 
 script:
-  - ./mvnw test
+  - ./mvnw package
+
+deploy:
+  provider: releases
+  api_key: $GITHUB_TOKEN
+  file_glob: true
+  file: ./target/jenkins-nexus-plugin.*
+  skip_cleanup: true
+  on:
+    tags: true
